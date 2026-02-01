@@ -1,5 +1,5 @@
 from .ppo_core import BasePPOAgent
-from .mec_agent import MECAgent
+from .mec_agent_legacy import MECAgent
 import numpy as np
 
 class MECAgentPPO(BasePPOAgent, MECAgent):

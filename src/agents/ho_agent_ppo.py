@@ -1,5 +1,5 @@
 from .ppo_core import BasePPOAgent
-from .ho_agent import HOAgent
+from .ho_agent_legacy import HOAgent
 import numpy as np
 from collections import deque
 
