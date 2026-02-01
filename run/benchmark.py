@@ -105,7 +105,7 @@ def run_joint_episode(mec_net_state, ho_net_state, mec_intent, ho_intent,
         ho_decision = None
         if ho_agent:
             obs_ho = ho_agent.get_observation(ctx)
-            ho_action, _, _ = ho_agent.select_action_with_info(obs_ho)
+            ho_action, _, _ = ho_agent.select_action_with_info(obs_ho, context=ctx)
             ho_decision = int(ho_action)
         else:
             # Baseline: Let the sim's internal greedy baseline handle it

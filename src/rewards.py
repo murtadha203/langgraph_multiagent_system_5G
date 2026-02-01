@@ -261,26 +261,26 @@ def compute_ho_reward(
     # Outage Penalty (CRITICAL: Make staying in bad signal very expensive)
     # If RSRP < -95 dBm, agent MUST consider switching
     if rsrp_after < -95.0:
-        r_quality -= 10.0  # Strong penalty to force action
+        r_quality -= 50.0  # MASSIVE penalty (The Floor Is Lava)
     
     # 3. Stability Metrics (Ping-Pong)
     did_handover = (serving_cell_after != serving_cell_before)
     r_stability = 0.0
     
     if did_handover:
-        r_stability = -0.1  # Base cost of switching
+        # Base cost is now ZERO. Only penalize if it's a Ping-Pong.
+        r_stability = 0.0 
         
         # Ping-Pong Detection (2s window)
         recent_hos = [t for t in handover_history if (time_s - t <= 2.0) and (t < time_s)]
         
         if len(recent_hos) > 0:
             # Penalize linearly with number of recent HOs
-            
-            r_stability -= 0.2 * len(recent_hos)
+            r_stability -= 1.0 * len(recent_hos) # Stronger Ping-Pong penalty
             
             # Additional penalty if Gamma is high (Strict Mode)
             if w_stability > 0.5:
-                 r_stability -= 2.0 # Reduced from 5.0
+                 r_stability -= 2.0
     
     # 4. Final Combination
     # Quality is usually +0.5 to +2.0 without penalties

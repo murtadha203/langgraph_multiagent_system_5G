@@ -192,7 +192,7 @@ def run_marl_episode(episode_idx, mec_state, ho_state, steps_per_episode):
     }
 
 def train():
-    MAX_EPISODES = 10000
+    MAX_EPISODES = 10000 # Full training run
     STEPS_PER_EPISODE = 50
     BATCH_SIZE = 2048
     LR = 1e-5 # Ultra-low for synergistic fine-tuning

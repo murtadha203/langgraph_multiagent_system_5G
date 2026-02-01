@@ -23,7 +23,7 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         
         # Call BasePPOAgent init
         BasePPOAgent.__init__(self, obs_dim=self.obs_dim, action_dim=num_cells,
-                              lr=lr, gamma=0.99, batch_size=64)
+                              lr=lr, gamma=0.99, batch_size=64, **kwargs)
         
         # Call HOAgent init (mostly to set config and other state)
         # Note: We overwrite select_action and update, so DQN parts are ignored
@@ -65,7 +65,7 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         else:
             return single_obs
        
-    def select_action(self, observation: np.ndarray):
+    def select_action(self, observation: np.ndarray, context: dict = None):
         """
         PPO Action Selection: Sample from policy.
         Returns: action (int)
@@ -74,14 +74,37 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         In training loop, we must call select_action_with_info() instead.
         This method is kept for compatibility with evaluating code.
         """
-        action, _, _ = BasePPOAgent.select_action(self, observation)
+        action, _, _ = self.select_action_with_info(observation, context)
         return action
 
-    def select_action_with_info(self, observation: np.ndarray):
+    def select_action_with_info(self, observation: np.ndarray, context: dict = None):
         """
         Returns action, log_prob, value for training buffer.
+        INCLUDES HYBRID SAFETY OVERRIDE.
         """
-        return BasePPOAgent.select_action(self, observation)
+        action, log_prob, value = BasePPOAgent.select_action(self, observation)
+        
+        # --- SAFETY OVERRIDE ---
+        # If the agent is stuck in a dead zone, force a handover to the best cell.
+        if context:
+            # Use SINR for decision (Connection Quality) instead of just RSRP (Signal Strength)
+            sinr_list = context.get('sinr_db', [])
+            serving_id = context.get('serving_cell_id', 0)
+            
+            if sinr_list and 0 <= serving_id < len(sinr_list):
+                current_sinr = sinr_list[serving_id]
+                
+                # CRITICAL THRESHOLD: -5.0 dB SINR (Poor Quality/Outage)
+                if current_sinr < -5.0:
+                    best_cell = int(np.argmax(sinr_list))
+                    best_sinr = sinr_list[best_cell]
+                    
+                    # Switch if there is a significantly better option (> 0 dB or +5 dB better)
+                    if best_sinr > current_sinr + 5.0:
+                        action = best_cell
+        # -----------------------
+        
+        return action, log_prob, value
         
     def get_metrics(self):
         return {
