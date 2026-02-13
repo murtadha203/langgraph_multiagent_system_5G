@@ -66,5 +66,6 @@ The agent is trained using a multi-phase curriculum to ensure robust convergence
 
 In the final architecture, the HOAgentPPO is deployed as a pre-trained, frozen model within a Tactical Execution wrapper. This layer executes optimized actions while allowing higher-level orchestration layers to adjust environmental parameters (e.g., cell individual offsets or time-to-trigger).
 
-### File Location
-[`src/telellm/tactical_frozen.py`](file:///c:/Users/mu0rt/OneDrive/Desktop/graduation%20project/src/telellm/tactical_frozen.py)
+### File Locations
+*   **Core Logic**: [`src/agents/ho_agent_ppo.py`](file:///c:/Users/mu0rt/OneDrive/Desktop/graduation%20project/src/agents/ho_agent_ppo.py)
+*   **Deployment Wrapper**: [`src/telellm/tactical_frozen.py`](file:///c:/Users/mu0rt/OneDrive/Desktop/graduation%20project/src/telellm/tactical_frozen.py)

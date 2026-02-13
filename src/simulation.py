@@ -284,7 +284,7 @@ class NetworkSimulation:
         self.handover_history: List[float] = []  # Timestamps of handover events
         self.trace: List[Dict[str, Any]] = []
         
-        # [PHASE 17] Handover State Tracking for TTT enforcement
+        # Handover State Tracking for TTT enforcement
         self.pending_handover_target: Optional[int] = None
         self.pending_handover_timer: float = 0.0
         self.pending_handover_rsrp_delta: float = 0.0
@@ -364,7 +364,7 @@ class NetworkSimulation:
             bs_x = spacing * (i + 1)
             bs_y = max_y / 2.0
             
-            # [PHASE 18] CURRICULUM LEARNING with 3-Phase Awareness
+            # Curriculum Learning with 3-Phase Awareness
             # Phase 1 (Epochs 1-100): Exploration - random loads
             # Phase 2 (Epochs 101-350): Learning Zone - 80% on 0.5-0.95
             # Phase 3 (Epochs 351-500): Fine Tuning - balanced distribution
@@ -374,7 +374,7 @@ class NetworkSimulation:
                     load = random.uniform(0.0, 0.99)
                 elif self.curriculum_phase == 2:
                     # Phase 2: Learning Zone (High Congestion Focus)
-                    # Prioritize loads where greedy policies fail (0.75-0.95)
+                    # Prioritize loads where baseline policies struggle (0.75-0.95)
                     rand = random.random()
                     if rand < 0.6:
                         # Critical Congestion Zone

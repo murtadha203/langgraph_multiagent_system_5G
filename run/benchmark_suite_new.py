@@ -1,5 +1,5 @@
 """
-Comprehensive Benchmark Suite for Thesis Defense
+Comprehensive Benchmark Suite for Thesis Defense (NEW VERSION)
 Tests AI robustness across 4 critical dimensions:
 1. Congestion (Network Context)
 2. Mobility (User Context)  
@@ -25,8 +25,8 @@ from src.agents.ho_agent_ppo import HOAgentPPO
 # -------------------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------------------
-NUM_EPISODES_PER_POINT = 25
-STEPS_PER_EPISODE = 200
+NUM_EPISODES_PER_POINT = 25  # Reduced for speed (was 50)
+STEPS_PER_EPISODE = 200      # Reduced for speed (was 500)
 MEC_CHECKPOINT = os.path.join(project_root, "models", "mec_policy.pth")
 HO_CHECKPOINT = os.path.join(project_root, "models", "ho_policy.pth")
 

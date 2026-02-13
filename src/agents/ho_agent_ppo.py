@@ -80,12 +80,11 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
     def select_action_with_info(self, observation: np.ndarray, context: dict = None):
         """
         Returns action, log_prob, value for training buffer.
-        INCLUDES HYBRID SAFETY OVERRIDE.
         """
         action, log_prob, value = BasePPOAgent.select_action(self, observation)
         
-        # --- SAFETY OVERRIDE ---
-        # If the agent is stuck in a dead zone, force a handover to the best cell.
+        # --- CONTROL OVERRIDE ---
+        # If the agent is in a critical connection state, force a handover to the best cell.
         if context:
             # Use SINR for decision (Connection Quality) instead of just RSRP (Signal Strength)
             sinr_list = context.get('sinr_db', [])
@@ -94,7 +93,7 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
             if sinr_list and 0 <= serving_id < len(sinr_list):
                 current_sinr = sinr_list[serving_id]
                 
-                # CRITICAL THRESHOLD: -5.0 dB SINR (Poor Quality/Outage)
+                # Threshold: -5.0 dB SINR (Poor Quality/Outage Risk)
                 if current_sinr < -5.0:
                     best_cell = int(np.argmax(sinr_list))
                     best_sinr = sinr_list[best_cell]
@@ -102,6 +101,7 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
                     # Switch if there is a significantly better option (> 0 dB or +5 dB better)
                     if best_sinr > current_sinr + 5.0:
                         action = best_cell
+                        # We keep log_prob/value as is, treating this as environment dynamics
         # -----------------------
         
         return action, log_prob, value

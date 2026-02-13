@@ -40,9 +40,17 @@ Utilizes an Actor-Critic framework shared with the shared PPO core logic.
 *   **Output (Actor)**: 3 units (Action logits for Local, Edge, Cloud).
 *   **Output (Critic)**: 1 unit (State value estimation).
 
+## 3. Safety Mechanisms (Throughput Guardrail)
+
+To prevent energy waste during adverse network conditions, the agent includes a hard-coded **Throughput Guardrail**:
+
+*   **Condition**: If serving cell throughput drops below **1 Mbps**.
+*   **Action**: Force **Local Processing**.
+*   **Rationale**: Transmitting large tasks at extremely low throughput results in excessive transmission time (e.g., 150s for 15MB at 0.1Mbps), draining the battery significantly. Local processing, while slower than a good edge connection, is far more energy-efficient in these "dead zones".
+
 ---
 
-## 3. Training and Curriculum
+## 4. Training and Curriculum
 
 The agent is trained through a curriculum focused on intent adaptation:
 

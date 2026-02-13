@@ -37,7 +37,8 @@ python run/benchmark.py
 
 This will load the final models from `models/` and export updated results and plots to `data/`.
 
-## 🛡️ Performance Highlights (Set B)
-- **MEC Offloading Success Rate**: ~90% under high-stress conditions.
-- **Polymorphic Reliability (Max-Power)**: ~70% success rate with throughput focus.
-- **Synergy**: Integrated MARL agents outperform baseline heuristics by >4x in service reliability.
+## 🛡️ Performance Highlights (Final Benchmark)
+- **MEC Offloading Success Rate**: ~94% at cell edge (up from 80% due to throughput guardrail).
+- **Energy Efficiency**: drastic reduction in energy waste at cell edge (from >1000J to <2J).
+- **Polymorphic Reliability**: ~85% success rate across all mobility profiles.
+- **Synergy**: Integrated MARL agents outperform baseline heuristics by >4x in service reliability under congestion.

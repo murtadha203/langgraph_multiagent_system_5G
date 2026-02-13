@@ -25,11 +25,15 @@ class MECAgentPPO(BasePPOAgent, MECAgent):
         self.action_map = {0: "local", 1: "edge", 2: "cloud"}
 
     def select_action(self, observation: np.ndarray, context=None):
-        # Physics Guardrail
+        # Physics Guardrail (Safety Override)
         if context is not None:
-             rsrp_dbm = context.get("serving_rsrp_dbm", -80.0)
-             if rsrp_dbm < -110.0:
-                 return 0
+             # Check Throughput directly (captures both RSRP and SINR/Interference issues)
+             throughput = context.get("serving_throughput_bps", 0.0)
+             
+             # If throughput is trash (< 1 Mbps), force LOCAL.
+             # Saving 15 Mbits at 0.1 Mbps takes 150 seconds = HUGE energy.
+             if throughput < 1e6: 
+                 return 0 # Local
         
         action, _, _ = BasePPOAgent.select_action(self, observation)
         return action
@@ -37,13 +41,13 @@ class MECAgentPPO(BasePPOAgent, MECAgent):
     def select_action_with_info(self, observation: np.ndarray, context=None):
         """
         Select action and return policy information.
-        Includes a safety guardrail for low RSRP conditions.
+        Includes a safety guardrail for low Throughput conditions.
         """
         if context is not None:
-             rsrp_dbm = context.get("serving_rsrp_dbm", -80.0)
-             if rsrp_dbm < -110.0:
-                 # Force local processing if signal is too weak
-                 return 0, 0.0, 0.0 
+             throughput = context.get("serving_throughput_bps", 0.0)
+             # Safety Override: Force Local (0) if Throughput < 1 Mbps
+             if throughput < 1e6:
+                 return 0, 0.0, 0.0  
         
         return BasePPOAgent.select_action(self, observation)
 
