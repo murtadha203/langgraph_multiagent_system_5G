@@ -60,6 +60,10 @@ The agent is trained using a multi-phase curriculum to ensure robust convergence
     *   Increased handover penalty.
     *   Injection of measurement noise (shadowing) to enhance generalizability.
 
+4.  **Phase 4: Polymorphic Operation (The "Real World")**
+    *   **Objective:** Master dynamic intent switching.
+    *   **Task:** Agents must generalize their policy to maximize the *intent-weighted* reward function $R_{total}$. They learn to prioritize energy saving when $\beta$ is high, and latency when $\alpha$ is high.
+
 ---
 
 ## 4. Deployment Model: Tactical Execution

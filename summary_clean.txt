@@ -1,0 +1,22 @@
+=== BENCHMARK ANALYSIS ===
+
+--- Scenario: Safety_Critical ---
+Tier1_Legacy    | Drop:   0.92% | Eng:   0.4318mJ | Lat: 918.79ms | HO:  0.4 | Conn: 100.0% | Min RSRP: -92.85
+Tier2_Static    | Drop:   0.52% | Eng:   0.2635mJ | Lat: 545.52ms | HO:  0.0 | Conn: 100.0% | Min RSRP: -95.11
+Tier3_Orch      | Drop:   0.50% | Eng:   0.2496mJ | Lat: 517.56ms | HO:  0.2 | Conn: 100.0% | Min RSRP: -93.41
+
+--- Scenario: Green_IoT ---
+Tier1_Legacy    | Drop:   0.00% | Eng:   0.0097mJ | Lat:  87.82ms | HO:  0.2 | Conn: 100.0% | Min RSRP: -92.92
+Tier2_Static    | Drop:   0.00% | Eng:   0.0097mJ | Lat:  87.82ms | HO:  0.4 | Conn: 100.0% | Min RSRP: -107.15
+Tier3_Orch      | Drop:   0.00% | Eng:   0.0097mJ | Lat:  87.82ms | HO:  0.0 | Conn: 100.0% | Min RSRP: -100.42
+
+--- Scenario: Congestion_Collapse ---
+Tier1_Legacy    | Drop:   4.54% | Eng:   4.4008mJ | Lat: 1930.19ms | HO:  0.4 | Conn: 100.0% | Min RSRP: -89.93
+Tier2_Static    | Drop:   4.36% | Eng:  38.5256mJ | Lat: 1650.85ms | HO:  0.2 | Conn: 100.0% | Min RSRP: -91.34
+Tier3_Orch      | Drop:   4.38% | Eng:  36.8718mJ | Lat: 1653.94ms | HO:  0.4 | Conn: 100.0% | Min RSRP: -95.87
+
+--- Scenario: Day_in_the_Life ---
+Tier1_Legacy    | Drop:   4.73% | Eng:   4.7437mJ | Lat: 1998.76ms | HO:  1.4 | Conn: 100.0% | Min RSRP: -96.70
+Tier2_Static    | Drop:   4.63% | Eng:  32.7965mJ | Lat: 2032.53ms | HO:  0.8 | Conn: 100.0% | Min RSRP: -95.79
+Tier3_Orch      | Drop:   4.65% | Eng:  30.3524mJ | Lat: 2032.23ms | HO:  0.8 | Conn: 100.0% | Min RSRP: -94.32
+

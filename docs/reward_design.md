@@ -17,13 +17,17 @@ Penalizes high power consumption.
 $$ R_{energy} = 1.0 - \frac{Power_{current}}{Power_{max}} $$
 
 ### C. Stability Reward ($R_{stability}$)
-Penalizes high-frequency handover events to ensure network stability.
-$$ R_{stability} = \begin{cases} -10.0 & \text{if Handover occurred} \\ +0.1 & \text{if Serving context maintained} \end{cases} $$
-*Note: This penalty prevents "ping-pong" handovers, encouraging the agent to tolerate transient signal fluctuations in favor of connection stability.*
+Penalizes "Ping-Pong" handovers (rapid switching back and forth).
+$$ R_{stability} = -1.0 \times \text{Count(Recent Handovers within 2s)} $$
+*Note: A single necessary handover is NOT penalized. Only rapid oscillations incur costs.*
 
-### D. Reliability Reward ($R_{reliability}$)
-Penalizes Radio Link Failures (RLF) to maintain continuous connectivity.
-$$ R_{reliability} = \begin{cases} -100.0 & \text{if RLF occurred} \\ +1.0 & \text{if Connectivity maintained} \end{cases} $$
+### D. Coverage / Outage Penalty ($R_{coverage}$)
+Critical penalty to prevent agents from getting stuck in dead zones (RSRP < -95 dBm).
+$$ R_{coverage} = \begin{cases} -2.0 & \text{if RSRP } < -95 \text{ dBm (The Floor is Lava)} \\ 0.0 & \text{otherwise} \end{cases} $$
+*Note: This value (-2.0) is scaled by a weight and factor of 10, resulting in a -20.0 effective penalty, which is clipped to remain gradient-friendly.*
+
+### E. Normalization
+All raw rewards are clipped to the range **[-20.0, +20.0]** to ensure training stability and prevent gradient explosions.
 
 ---
 
@@ -36,6 +40,7 @@ To ensure robust policy convergence, a multi-phase curriculum learning strategy 
 | **Phase 1** | Exploration | State-space discovery | Map environmental dynamics and action outcomes. |
 | **Phase 2** | Optimization | Performance maximization | Maximize $R_{latency}$ and $R_{energy}$ efficiency. |
 | **Phase 3** | Stabilization | Volatility suppression | Enforce $R_{stability}$ constraints and noise robustness. |
+| **Phase 4** | **Polymorphic** | **Intent Adaptation** | Generalize policy to handle dynamic $\alpha, \beta, \gamma$ weights. |
 
 ---
 

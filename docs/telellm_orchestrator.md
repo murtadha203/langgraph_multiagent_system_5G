@@ -7,8 +7,8 @@
 
 The **TeleLLM** architecture introduces a hierarchical control system where a Large Language Model (LLM) act as a high-level cognitive controller for low-level Deep Reinforcement Learning (DRL) agents.
 
-- **Execution Layer (DRL Agents):** Reactive agents (millisecond scale) trained via PPO. They handle immediate handover and offloading decisions.
-- **Control Layer (TeleLLM):** A cognitive controller (second/minute scale) that monitors system-wide performance and dynamically switches the system's **Control Mode**.
+- **Execution Layer (DRL Agents):** Reactive agents (millisecond scale, 10ms steps) trained via PPO. They handle immediate handover and offloading decisions.
+- **Control Layer (TeleLLM):** A cognitive controller (5.0 second interval) that monitors system-wide performance and dynamically switches the system's **Control Mode**. This time-scale separation ensures the LLM does not oscillate and matches realistic inference latencies.
 
 ---
 

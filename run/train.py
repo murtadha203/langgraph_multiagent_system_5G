@@ -11,6 +11,7 @@ import pandas as pd
 import json
 from tqdm import tqdm
 from joblib import Parallel, delayed, cpu_count
+import random
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,22 +59,45 @@ class MecTrainingWrapper:
 def calculate_mec_reward(metrics, intent_vector, context):
     if not metrics['deadline_met']:
         return -2.0 # Harsh penalty for unity
+        
+    try:
+        # Debug
+        # print(f"DEBUG: metrics={metrics.keys()} intent={intent_vector}")
     
-    # Normalization
-    thr_bps = context.get('serving_throughput_bps', 0.0)
-    MAX_THR = 1e9 
-    MAX_LAT = 0.3 # Hardened
-    MAX_ENG = 1.0 
+        # --- Energy Physics (Linear Battery Multiplier) ---
+        # User Request: battery_multiplier = 1.0 + ((100.0 - battery) / 25.0)
+        battery_j = context.get('ue_battery_joules', 1000.0) # Default full
+        battery_pct = (battery_j / 1000.0) * 100.0
+        battery_multiplier = 1.0 + ((100.0 - battery_pct) / 25.0)
+        
+        # Normalization
+        thr_bps = context.get('serving_throughput_bps', 0.0)
+        MAX_THR = 1e9 
+        MAX_LAT = 0.3 # Hardened
+        MAX_ENG = 1.0 
+        
+        g_thr = min(thr_bps / MAX_THR, 1.0)
+        lat_val = metrics.get('latency_s', 0.3)
+        g_lat = 1.0 - min(lat_val / MAX_LAT, 1.0)
+        eng_val = metrics.get('energy_j', 1.0)
+        
+        # --- Energy Score Logic ---
+        w_thr, w_lat, w_eng = intent_vector
     
-    g_thr = min(thr_bps / MAX_THR, 1.0)
-    lat_val = metrics.get('latency_s', 0.3)
-    g_lat = 1.0 - min(lat_val / MAX_LAT, 1.0)
-    eng_val = metrics.get('energy_j', 1.0)
-    g_eng = 1.0 - min(eng_val / MAX_ENG, 1.0)
-    
-    w_thr, w_lat, w_eng = intent_vector
-    weighted_score = (w_thr * g_thr) + (w_lat * g_lat) + (w_eng * g_eng)
-    return 1.0 + weighted_score
+        # New Logic: penalty = energy * beta * battery_multiplier
+        penalty = eng_val * w_eng * battery_multiplier
+        
+        # Weighted Score (Latency + Throughput only)
+        # Energy is handled strictly via penalty
+        weighted_score = (w_thr * g_thr) + (w_lat * g_lat)
+        
+        # Apply Physics Penalty
+        return 1.0 + weighted_score - penalty
+
+    except Exception as e:
+        print(f"CRASH IN REWARD: {e}")
+        print(f"Context keys: {context.keys()}")
+        raise e
 
 def calculate_ho_reward(context, prev_context, intent_vector):
     # Normalized SINR (Goodness)
@@ -99,7 +123,7 @@ def calculate_ho_reward(context, prev_context, intent_vector):
     return weighted_score - penalty
 
 def run_marl_episode(episode_idx, mec_state, ho_state, steps_per_episode):
-    seed = int(episode_idx + 80000)
+    seed = int(episode_idx + 907)
     
     # Share the same intent across both agents for unity
     intent_mode = episode_idx % 3
@@ -113,11 +137,11 @@ def run_marl_episode(episode_idx, mec_state, ho_state, steps_per_episode):
     # Init Agents
     mec_agent = MECAgentPPO(agent_id="mec_worker", num_actions=3)
     mec_agent.network.load_state_dict(mec_state)
-    mec_agent.network.eval()
+    mec_agent.network.train()
     
     ho_agent = HOAgentPPO(agent_id="ho_worker")
     ho_agent.network.load_state_dict(ho_state)
-    ho_agent.network.eval()
+    ho_agent.network.train()
     
     wrapper = MecTrainingWrapper(mec_agent)
     context = sim.reset(isd_range=(500, 1000), intent_weights=intent)
@@ -197,6 +221,12 @@ def train():
     BATCH_SIZE = 2048
     LR = 1e-5 # Ultra-low for synergistic fine-tuning
     
+    # Global Seed
+    seed_val = 907
+    random.seed(seed_val)
+    np.random.seed(seed_val)
+    torch.manual_seed(seed_val)
+    
     MEC_PATH = os.path.join(project_root, "models", "mec_policy.pth")
     HO_PATH = os.path.join(project_root, "models", "ho_policy.pth")
     
@@ -245,23 +275,22 @@ def train():
             
             # Update MEC
             if len(mec_buffer['obs']) >= BATCH_SIZE:
+                mec_marl.network.train()
                 mec_marl.update(mec_buffer)
                 mec_buffer = {'obs':[], 'act':[], 'logprob':[], 'rew':[], 'val':[], 'done':[]}
             
             # Update HO
             if len(ho_buffer['obs']) >= BATCH_SIZE:
+                ho_marl.network.train()
                 ho_marl.update(ho_buffer)
                 ho_buffer = {'obs':[], 'act':[], 'logprob':[], 'rew':[], 'val':[], 'done':[]}
                 
-            # Best & Save
-            if len(stats_history) >= 100:
-                avg_sr = np.mean([s['sr'] for s in stats_history[-100:]])
-                if avg_sr > best_sr:
-                    best_sr = avg_sr
-                    mec_marl.save(os.path.join(project_root, "models", "mec_policy_best.pth"))
-                    ho_marl.save(os.path.join(project_root, "models", "ho_policy_best.pth"))
-
+            # Save Checkpoints Periodically
             if current_ep % 500 == 0:
+                # Save as "latest" snapshot
+                mec_marl.save(os.path.join(project_root, "models", "mec_policy.pth"))
+                ho_marl.save(os.path.join(project_root, "models", "ho_policy.pth"))
+                
                 pd.DataFrame(stats_history).to_csv(os.path.join(project_root, "data", "training_metrics.csv"), index=False)
                 
             current_ep += n_batch

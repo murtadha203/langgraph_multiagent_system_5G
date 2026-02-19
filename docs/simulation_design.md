@@ -180,7 +180,7 @@ Models **high-bandwidth, latency-sensitive** applications like VR/AR, cloud gami
 
 | Parameter         | Value         | Rationale                         |
 | ----------------- | ------------- | --------------------------------- |
-| Latency Budget    | **60 ms**     | Motion-to-photon threshold for VR |
+| Latency Budget    | **300 ms**     | Relaxed budget for Hardened Training (0.3s) |
 | Data Size         | **30 Mbits**  | High-resolution 4K/8K frame data  |
 | CPU Cycles        | **2 Gcycles** | Heavy rendering workload          |
 | Inter-arrival     | **0.1 s**     | 10 frames/sec (High density)      |
@@ -307,44 +307,38 @@ Where:
 
 ### Movement Dynamics
 
-**Constant Velocity Model**:
+**Inertia-Based Mobility (Gauss-Markov-like)**:
+To model realistic UE behavior (avoiding sharp, unnatural turns), the simulation implements a mobility model with inertia. The velocity and direction are updated smoothly over time, rather than changing instantaneously.
+
 $$
 \begin{align}
-x(t + \Delta t) &= x(t) + v \cdot \cos(\theta) \cdot \Delta t \\
-y(t + \Delta t) &= y(t) + v \cdot \sin(\theta) \cdot \Delta t
+x(t + \Delta t) &= x(t) + v(t) \cdot \cos(\theta(t)) \cdot \Delta t \\
+y(t + \Delta t) &= y(t) + v(t) \cdot \sin(\theta(t)) \cdot \Delta t
 \end{align}
 $$
 
+**Smooth Updates**:
+The speed $v(t)$ and direction $\theta(t)$ effectively follow a Gauss-Markov process, where the new value is a correlated function of the previous value plus random noise. This simulates the physical constraints of a vehicle or pedestrian handling.
+
 Where:
 
-- $v$ = `speed_mps` (default 10 m/s)
+- $v$ = `speed_mps` (default 10 m/s, variable)
 - $\theta$ = `direction_rad`
 - $\Delta t$ = `dt_s` (time step, default 0.01s)
 
-### Boundary Handling (Reflecting Borders)
+### Boundary Handling (Clamped & Waypoint-Based)
 
-When UE hits a boundary:
-
-**Horizontal Walls** ($x < 0$ or $x > max_x$):
-$$
-\theta_{new} = \pi - \theta_{old}
-$$
-
-**Vertical Walls** ($y < 0$ or $y > max_y$):
-$$
-\theta_{new} = -\theta_{old}
-$$
-
-This creates a **billiard ball** effect, preventing the UE from leaving the area.
+The simulation uses a **Chaotic Random Waypoint** model.
+1.  **Waypoints**: UE picks a target within bounds and moves towards it.
+2.  **Clamping**: If the UE reaches a boundary, its position is clamped to the map limits (`x_min`, `x_max`) to keep it within the valid coverage area.
+    *   *Note: Legacy reflection logic exists in the UE class but the Waypoint model takes precedence.*
 
 ### Example Trajectory
-
 ```
-Initial: (100, 500), θ=0°, v=10m/s
+Initial: (100, 500), Target=(800, 800)
 ├─ t=0.0s:  (100, 500)
-├─ t=1.0s:  (110, 500)  [moving right]
-├─ t=100s:  (1000, 500) [hit right wall]
-└─ t=101s:  (990, 500)  [reflected, now moving left]
+├─ t=1.0s:  (110, 505)  [moving towards target]
+...
 ```
 
 ---
@@ -772,6 +766,7 @@ To evaluate system robustness and polymorphism, the simulation incorporates spec
 | **Synergy** | **Coordination Analysis** | Concurrent task arrivals and handover requirements | Evaluate HO and MEC agent cooperation. |
 | **IBN-L** | **Latency Focused Intent** | $w_{lat}=1.0, w_{eng}=0.0$ | Optimize for minimal delay. |
 | **IBN-E** | **Energy Focused Intent** | $w_{lat}=0.0, w_{eng}=1.0$ | Maximize battery longevity. |
+| **Congestion** | **System-Wide Load** | Load factor 0.0 to 0.99 applied to **ALL** cells | Test performance under global network saturation. |
 | **Adversarial** | **Failure Injection** | Sudden Cell Outage or Traffic Burst | Test resilience and recovery time. |
 
 ### Implementation

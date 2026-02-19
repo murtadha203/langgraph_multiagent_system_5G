@@ -34,7 +34,7 @@ python run/benchmark.py
     *   **Synergy Analysis**: Evaluates coordination between HO and MEC agents.
     *   **IBN Polymorphism**: Validates agent adaptation to different intent vectors (Latency vs. Energy focus).
 3.  **Output:**
-    *   **Data**: `data/synergy_analysis.csv`, `data/polymorphism_analysis.csv`
+    *   **Data**: `benchmark_suite_results_new.csv`
     *   **Plots**: `data/plots/reliability_benchmark.png`
 
 ---

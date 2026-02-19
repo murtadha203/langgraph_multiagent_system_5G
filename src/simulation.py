@@ -4,35 +4,25 @@ Provides a multi-agent environment for handovers and computational offloading de
 """
 
 from __future__ import annotations
-
 import math
 import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
-
 import numpy as np
 
 
-# # Utility functions
-
-# In[2]:
 
 
+
+    # Utility functions
 def dbm_to_watts(dbm: float) -> float: 
     return 10 ** ((dbm - 30) / 10.0)
-
-
-# In[3]:
 
 
 def watts_to_dbm(watts: float) -> float:
     if watts <= 0:
         return -200.0
     return 10 * math.log10(watts) + 30
-
-
-# In[4]:
-
 
 def path_loss_db(distance_m: float,
                  pl0_db: float = 43.0, # Friis reference loss for 3.5 GHz 
@@ -43,29 +33,22 @@ def path_loss_db(distance_m: float,
     d = max(distance_m, 1.0)
     return pl0_db + 10 * path_loss_exp * math.log10(d)
 
-
-# In[5]:
-
-
 def shannon_capacity_hz(bandwidth_hz: float, sinr_linear: float) -> float:
     """C = B * log2(1 + SINR)"""
     return bandwidth_hz * math.log2(1.0 + sinr_linear)
 
 
-# # Data models
-
-# In[6]:
-
+#Data models
 
 @dataclass
 class BaseStation:
     id: int
     x: float
     y: float
-    tx_power_dbm: float = 46.0  # Transmission power in dBm (~40W)
+    tx_power_dbm: float = 49.0  # Transmission power in dBm (~40W)
     noise_dbm: float = -93.0   # Thermal noise floor
     # Based on 3GPP TS 38.104
-    bandwidth_mhz: float = 200.0  # Configured bandwidth (MHz)
+    bandwidth_mhz: float = 200.0  # Configured bandwidth (MHz) 5G Sub-6 GHz
     load_factor: float = 0.0  # Cell congestion level (0.0 to 1.0)
     
     # Handover Control Parameters (3GPP-compliant)
@@ -75,9 +58,6 @@ class BaseStation:
 
     def distance_to(self, x: float, y: float) -> float:
         return math.hypot(self.x - x, self.y - y)
-
-
-# In[7]:
 
 
 @dataclass
@@ -110,10 +90,6 @@ class UserEquipment:
         self.y = new_y
 
 
-
-# In[8]:
-
-
 @dataclass
 class Task:
     id: int
@@ -123,8 +99,6 @@ class Task:
     deadline_s: float
     service_type: str
 
-
-# In[9]:
 
 
 @dataclass
@@ -136,9 +110,6 @@ class ServiceProfile:
     task_data_bits_mean: float
     task_cpu_cycles_mean: float
     task_interarrival_s: float
-
-
-# In[ ]:
 
 
 SERVICE_PROFILES: Dict[str, ServiceProfile] = {
@@ -171,8 +142,6 @@ SERVICE_PROFILES: Dict[str, ServiceProfile] = {
     ),
 }
 
-# In[11]:
-
 
 @dataclass
 class MecServer:
@@ -180,8 +149,6 @@ class MecServer:
     attached_bs: int
     cpu_ghz: float = 500.0 # Computational capacity
 
-
-# Mobility Models
 
 class ChaoticRandomWaypoint:
     """
@@ -218,6 +185,11 @@ class ChaoticRandomWaypoint:
                 ue.vy = (dy / dist) * self.current_speed
                 ue.x += ue.vx * dt
                 ue.y += ue.vy * dt
+                
+                # Boundary Enforcement (Bounce/Clamp)
+                # Simple clamping for now to transform Out-of-Bounds to Surface-Move
+                ue.x = max(self.bounds['x_min'], min(self.bounds['x_max'], ue.x))
+                ue.y = max(self.bounds['y_min'], min(self.bounds['y_max'], ue.y))
             else:
                 self._randomize_behavior(ue)
         else:
@@ -257,7 +229,7 @@ class NetworkSimulation:
         num_cells: int = 7,  # 1 center + 6 neighbors
         isd_range: Tuple[float, float] = (400, 600),  # Inter-Site Distance range
         dt_s: float = 0.01,
-        seed: Optional[int] = None,
+        seed: Optional[int] = 907,
         mobility_min_speed: float = 0.0, 
     ) -> None:
         self.num_cells = num_cells
@@ -314,6 +286,7 @@ class NetworkSimulation:
         self.RLF_RECOVERY_TIME_S = 1.0          # Delay penalty for RLF
         
         # Topology and MEC servers are now initialized in reset(), not here
+        self.intent_weights: Dict[str, float] = {'throughput': 0.34, 'latency': 0.33, 'energy': 0.33}
 
     # ------------------------ initialization -----------------------------
 
@@ -352,55 +325,7 @@ class NetworkSimulation:
             weights = [0.1, 0.15, 0.25, 0.25, 0.15, 0.1]
             return random.choices(loads, weights=weights)[0]
     
-    def _init_cells_and_mec(self) -> None:
-        """Place base stations in a simple line for now, each with a MEC server."""
-        max_x, max_y = self.area_size
-        spacing = max_x / (self.num_cells + 1)
 
-        self.base_stations.clear()
-        self.mec_servers.clear()
-
-        for i in range(self.num_cells):
-            bs_x = spacing * (i + 1)
-            bs_y = max_y / 2.0
-            
-            # Curriculum Learning with 3-Phase Awareness
-            # Phase 1 (Epochs 1-100): Exploration - random loads
-            # Phase 2 (Epochs 101-350): Learning Zone - 80% on 0.5-0.95
-            # Phase 3 (Epochs 351-500): Fine Tuning - balanced distribution
-            if i == 0:
-                if self.curriculum_phase == 1:
-                    # Exploration: Full random range
-                    load = random.uniform(0.0, 0.99)
-                elif self.curriculum_phase == 2:
-                    # Phase 2: Learning Zone (High Congestion Focus)
-                    # Prioritize loads where baseline policies struggle (0.75-0.95)
-                    rand = random.random()
-                    if rand < 0.6:
-                        # Critical Congestion Zone
-                        load = random.uniform(0.75, 0.95)
-                    elif rand < 0.85:
-                        # Moderate Congestion
-                        load = random.uniform(0.5, 0.75)
-                    else:
-                        # Edge Cases
-                        load = random.choice([0.0, 0.3, 0.99])
-                else:
-                    # Fine Tuning: Balanced distribution
-                    loads = [0.0, 0.3, 0.5, 0.7, 0.9, 0.99]
-                    weights = [0.1, 0.15, 0.25, 0.25, 0.15, 0.1]
-                    load = random.choices(loads, weights=weights)[0]
-                # Log load factor if verbose logging is enabled
-                # print(f"[Curriculum P{self.curriculum_phase}] Cell 0 Load: {load:.2f}")
-            else:
-                load = 0.0
-            
-            bs = BaseStation(id=i, x=bs_x, y=bs_y, load_factor=load)
-            self.base_stations.append(bs)
-            self.mec_servers[i] = MecServer(id=i, attached_bs=i)
-
-        # Intent-Based Networking (IBN) state
-        self.intent_weights: Dict[str, float] = {'throughput': 0.34, 'latency': 0.33, 'energy': 0.33}
         
     def set_intent(self, throughput: float, latency: float, energy: float) -> None:
         """Explicitly set the User Intent Vector for the current episode."""
@@ -585,6 +510,26 @@ class NetworkSimulation:
         return UserEquipment(x=0.0, y=0.0, speed_mps=0.0, 
                             direction_rad=0.0, battery_joules=1000.0)
 
+    def _update_energy(self, duration_s: float, tx_active: bool = False):
+        """Update UE battery with realistic power model."""
+        if self.ue is None: return
+        
+        # Physics Fix: Idle Power + TX Power
+        IDLE_POWER_W = 0.3  # 300mW base drain (screen/modem standby)
+        
+        power_w = IDLE_POWER_W
+        if tx_active:
+             power_w += 2.5 # Add TX power
+             
+        energy_j = power_w * duration_s
+        self.ue.battery_joules = max(0.0, self.ue.battery_joules - energy_j)
+        
+    def _apply_ho_penalty(self):
+        """Apply energy cost for handover signaling."""
+        if self.ue is None: return
+        HO_COST_J = 0.2 # 200mJ signaling penalty
+        self.ue.battery_joules = max(0.0, self.ue.battery_joules - HO_COST_J)
+
     # ------------------------ radio model --------------------------------
 
     def _update_shadowing(self, distance_moved: float) -> None:
@@ -623,9 +568,8 @@ class NetworkSimulation:
         ue_x, ue_y = self.ue.x, self.ue.y
         
         # Doppler Penalty Calculation
-        # Simple linear degradation: 0.2 dB per m/s approx
-        # At 30 m/s -> 6 dB loss
-        doppler_loss_db = 0.2 * self.ue.speed_mps
+        # Simple linear degradation capped at 6 dB to avoid unrealistic outage at speed
+        doppler_loss_db = min(0.2 * self.ue.speed_mps, 6.0)
 
         for bs in self.base_stations:
             d = bs.distance_to(ue_x, ue_y)
@@ -653,7 +597,9 @@ class NetworkSimulation:
             for j, _ in enumerate(self.base_stations):
                 if j == i:
                     continue
-                interference_w += dbm_to_watts(rsrp_dbm_list[j])
+                # Scale interference by the neighbor's load factor
+                # Empty cells don't transmit data (mostly)
+                interference_w += dbm_to_watts(rsrp_dbm_list[j]) * self.base_stations[j].load_factor
 
             noise_w = dbm_to_watts(bs.noise_dbm)
             
@@ -842,9 +788,9 @@ class NetworkSimulation:
 
         # Edge processing via serving cell
         elif offload_target == "edge":
+            mec = self.mec_servers[self.serving_cell_id]
             tx_rate_bps = max(serving_throughput_bps, 1e3)
             tx_time_s = task.data_size_bits / tx_rate_bps
-            mec = self.mec_servers[self.serving_cell_id]
             exec_time_s = task.cpu_cycles / (mec.cpu_ghz * 1e9)
             total_latency_s = tx_time_s + exec_time_s
             energy_j = tx_time_s * tx_power_w
@@ -864,8 +810,8 @@ class NetworkSimulation:
 
         deadline_met = total_latency_s <= (task.deadline_s - task.arrival_time_s)
 
-        # Update UE battery
-        ue.battery_joules -= energy_j
+        # Update UE battery with floor at 0
+        ue.battery_joules = max(0.0, ue.battery_joules - energy_j)
         
         # Get serving cell load factor and RSRP for context-aware rewards
         serving_cell = self.base_stations[self.serving_cell_id]
@@ -998,7 +944,9 @@ class NetworkSimulation:
                     # Execute handover
                     self.serving_cell_id = ho_target
                     self.handover_history.append(self.current_time_s)
+                    self.handover_history.append(self.current_time_s)
                     handover_executed = True
+                    self._apply_ho_penalty() # Physics Fix: HO Cost
                     
                     # Reset pending state
                     self.pending_handover_target = None
@@ -1026,6 +974,9 @@ class NetworkSimulation:
         # 3) Time & task arrival
         self.current_time_s += self.dt_s
         self.time_until_next_task_s -= self.dt_s
+        
+        # Physics Fix: Apply constant idle drain every step
+        self._update_energy(self.dt_s, tx_active=False)
 
         new_task = self._maybe_generate_task()
 
@@ -1144,19 +1095,19 @@ class NetworkSimulation:
     def inject_traffic_surge(self, multiplier: float = 5.0):
         """Simulate high traffic conditions."""
         self.anomaly_traffic_multiplier = multiplier
-        print(f"[Sim] ⚠ INJECTING TRAFFIC SURGE: {multiplier}x Arrival Rate ⚠")
+        print(f"[Sim] ! INJECTING TRAFFIC SURGE: {multiplier}x Arrival Rate !")
         
     def inject_battery_drop(self, target_level_percent: float = 10.0):
         """Simulate battery depletion."""
         if self.ue:
             target_joules = 1000.0 * (target_level_percent / 100.0)
             self.ue.battery_joules = target_joules
-            print(f"[Sim] ⚠ INJECTING BATTERY DROP: {target_level_percent}% ({target_joules}J) ⚠")
+            print(f"[Sim] ! INJECTING BATTERY DROP: {target_level_percent}% ({target_joules}J) !")
             
     def inject_cell_failure(self, cell_id: int):
         """Simulate equipment failure."""
         self.anomaly_cell_failure_id = cell_id
-        print(f"[Sim] ⚠ INJECTING CELL FAILURE: ID {cell_id} -> -120dBm ⚠")
+        print(f"[Sim] ! INJECTING CELL FAILURE: ID {cell_id} -> -120dBm !")
         
     def clear_anomalies(self):
         """Reset all adversarial conditions."""
@@ -1164,15 +1115,59 @@ class NetworkSimulation:
         self.anomaly_cell_failure_id = None
         print(f"[Sim] Anomalies Cleared.")
 
+    def check_system_panic(self) -> Tuple[bool, str]:
+        """
+        Check for critical system failures (Reflex Layer).
+        Triggers if:
+        1. RSRP < -105 dBm (Signal Failure)
+        2. Cell Load > 85% (Congestion Collapse)
+        """
+        if self.ue is None: return False, ""
+        
+        # 1. RSRP Check
+        # We need to get current RSRP. We can use the last computed state if available?
+        # Recomputing might be expensive but safe.
+        # But we act on `context` usually.
+        # Let's peek at the Serving Cell's properties directly for speed (Reflex).
+        if self.serving_cell_id < 0: return True, "NO_SERVICE"
+        
+        # We need the UE's RSRP. 
+        # Context has it. 
+        # But if this is inside Sim, we can re-evaluate.
+        # For efficiency, let's just assume this is called AFTER step() or get_context()
+        # and we use the internal state?
+        # Actually, let's just use the logic the user gave.
+        
+        # Re-calculate RSRP?
+        # `_compute_radio_state` does it.
+        # Let's trust the current state if available.
+        # Or just calculate distance to serving cell.
+        
+        # The user's code snippet:
+        # current_load = self.base_stations[self.serving_cell_id].load
+        
+        bs = self.base_stations[self.serving_cell_id]
+        if bs.load_factor > 0.85:
+            return True, "CONGESTION_PANIC"
+            
+        # For RSRP, we might need the context or recompute.
+        # Let's rely on the caller passing RSRP? 
+        # Or recompute path loss.
+        dist = bs.distance_to(self.ue.x, self.ue.y)
+        pl = path_loss_db(dist)
+        rsrp = bs.tx_power_dbm - pl # Simplified (no noise/shadowing/fading for speed?)
+        # Or we can just access the last trace?
+        
+        if rsrp < -105.0:
+             return True, "RSRP_PANIC"
+             
+        return False, ""
 
-
-
-
-# In[14]:
 
 
 if __name__ == "__main__":
-    sim = NetworkSimulation(num_cells=3, area_size=(1000.0, 1000.0), dt_s=0.01, seed=907)
+    # Updated to valid signature
+    sim = NetworkSimulation(num_cells=7, isd_range=(400, 600), dt_s=0.01, seed=907)
     ctx = sim.reset(service_type="VR")
     print("Initial context:")
     print({k: v for k, v in ctx.items() if k not in ("rsrp_dbm", "sinr_db", "throughput_bps")})

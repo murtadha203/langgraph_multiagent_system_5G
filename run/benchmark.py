@@ -90,7 +90,7 @@ def run_episode(sim, strategy_name, ho_agent, mec_agent, steps=STEPS_PER_EPISODE
     def mec_callback(task, ctx):
         if strategy_name == "Trained AI":
             obs = mec_agent.get_observation(ctx)
-            action = mec_agent.select_action(obs, context=ctx)
+            action = mec_agent.select_action(obs, context=ctx, training=False)
             return mec_agent.action_map.get(action, "local")
         elif strategy_name == "Stay":
             return "local"
@@ -106,8 +106,7 @@ def run_episode(sim, strategy_name, ho_agent, mec_agent, steps=STEPS_PER_EPISODE
         
         if strategy_name == "Trained AI":
             obs_ho = ho_agent.get_observation(context)
-            # CRITICAL: Pass context for Safety Override
-            ho_action, _, _ = ho_agent.select_action_with_info(obs_ho, context=context)
+            ho_action, _, _ = ho_agent.select_action_with_info(obs_ho, context=context, training=False)
             ho_decision = int(ho_action)
         elif strategy_name == "Stay":
             # Stay on current cell (unless RLF forces it, but we force decision=current)
@@ -172,7 +171,8 @@ def test_congestion():
             
             for ep in range(NUM_EPISODES_PER_POINT):
                 sim.reset(seed=random.randint(0, 100000))
-                sim.set_load_factor(0, congestion)
+                for bs in sim.base_stations:
+                    sim.set_load_factor(bs.id, congestion)
                 
                 metrics = run_episode(sim, strat_name, ho_agent, mec_agent)
                 
@@ -356,13 +356,93 @@ def test_celledge():
     
     return pd.DataFrame(results)
 
+def plot_results(df_all):
+    """Generate plots for all benchmark tests."""
+    print("\nGenerating Plots...")
+    
+    # Set style if available, else default
+    try:
+        plt.style.use('seaborn-v0_8-whitegrid')
+    except:
+        plt.style.use('default')
+        
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle('5G Network Benchmark Suite Results', fontsize=16)
+    
+    # 1. Congestion (Top Left)
+    df_cong = df_all[df_all['Test'] == 'Congestion']
+    ax = axes[0, 0]
+    for strat in df_cong['Strategy'].unique():
+        data = df_cong[df_cong['Strategy'] == strat]
+        # Sort by parameter to ensure line plot connects correctly
+        data = data.sort_values('Parameter')
+        ax.plot(data['Parameter'], data['Deadline_Rate'], marker='o', label=strat)
+        ax.fill_between(data['Parameter'], 
+                       data['Deadline_Rate'] - data['Deadline_Std'],
+                       data['Deadline_Rate'] + data['Deadline_Std'], alpha=0.2)
+    ax.set_title('Network Congestion Impact')
+    ax.set_xlabel('Cell Load Factor (0-1)')
+    ax.set_ylabel('Task Success Rate (%)')
+    ax.legend()
+    ax.grid(True)
+    
+    # 2. Mobility (Top Right)
+    df_mob = df_all[df_all['Test'] == 'Mobility']
+    ax = axes[0, 1]
+    for strat in df_mob['Strategy'].unique():
+        data = df_mob[df_mob['Strategy'] == strat]
+        data = data.sort_values('Parameter')
+        ax.plot(data['Parameter'], data['Handovers'], marker='o', label=strat)
+    ax.set_title('Mobility Impact on Handovers')
+    ax.set_xlabel('UE Speed (m/s)')
+    ax.set_ylabel('Average Handovers')
+    ax.legend()
+    ax.grid(True)
+
+    # 3. Application (Bottom Left)
+    df_app = df_all[df_all['Test'] == 'Application']
+    ax = axes[1, 0]
+    for strat in df_app['Strategy'].unique():
+        data = df_app[df_app['Strategy'] == strat]
+        data = data.sort_values('Parameter')
+        ax.plot(data['Parameter'], data['Latency_ms'], marker='o', label=strat)
+    ax.set_title('Application Load Impact')
+    ax.set_xlabel('Task Size (Mbits)')
+    ax.set_ylabel('Average Latency (ms)')
+    ax.legend()
+    ax.grid(True)
+
+    # 4. Cell-Edge (Bottom Right)
+    df_edge = df_all[df_all['Test'] == 'CellEdge']
+    ax = axes[1, 1]
+    for strat in df_edge['Strategy'].unique():
+        data = df_edge[df_edge['Strategy'] == strat]
+        data = data.sort_values('Parameter')
+        ax.plot(data['Parameter'], data['Energy'], marker='o', label=strat)
+    ax.set_title('Cell-Edge Energy Consumption')
+    ax.set_xlabel('Distance from Tower (m)')
+    ax.set_ylabel('Avg Energy per Task (J)')
+    ax.legend()
+    ax.grid(True)
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plot_path = os.path.join(RESULTS_DIR, "benchmark_suite_plots_new.png")
+    plt.savefig(plot_path)
+    print(f">> Plots saved to {plot_path}")
+
 def main():
     """Run complete benchmark suite."""
     print("\n" + "="*80)
     print("COMPREHENSIVE BENCHMARK SUITE - NEW ARCHITECTURE")
     print("="*80)
     print(f"Episodes per data point: {NUM_EPISODES_PER_POINT}")
+    print(f"Episodes per data point: {NUM_EPISODES_PER_POINT}")
     print(f"Steps per episode: {STEPS_PER_EPISODE}")
+    
+    # Set Seeds
+    seed = 907
+    random.seed(seed)
+    np.random.seed(seed)
     
     # Run all tests
     df_congestion = test_congestion()
@@ -372,8 +452,12 @@ def main():
     
     # Combine all results
     df_all = pd.concat([df_congestion, df_mobility, df_application, df_celledge], ignore_index=True)
-    df_all.to_csv(os.path.join(RESULTS_DIR, "benchmark_suite_results_new.csv"), index=False)
-    print("\n>> Raw data saved to benchmark_suite_results_new.csv")
+    df_all.to_csv(os.path.join(RESULTS_DIR, "benchmark_suite_results.csv"), index=False)
+    print("\n>> Raw data saved to benchmark_suite_results.csv")
+    
+    # Generate Plots
+    #df_all = pd.read_csv(os.path.join(RESULTS_DIR, "benchmark_suite_results_new.csv"))
+    plot_results(df_all)
     
     print("\n" + "="*80)
     print("BENCHMARK SUITE COMPLETE")

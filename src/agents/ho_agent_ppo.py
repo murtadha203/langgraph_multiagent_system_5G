@@ -1,9 +1,11 @@
 from .ppo_core import BasePPOAgent
-from .ho_agent_legacy import HOAgent
-import numpy as np
-from collections import deque
 
-class HOAgentPPO(BasePPOAgent, HOAgent):
+import numpy as np
+import math
+from collections import deque
+from typing import Dict, Any
+
+class HOAgentPPO(BasePPOAgent):
     """
     PPO implementation for the Handover (HO) Agent.
     Combines mobility-aware observation logic with a Proximal Policy Optimization core.
@@ -14,6 +16,8 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         # Initialize Base params
         self.num_cells = num_cells
         # Observation dimensions (includes throughput, RSRP, and intent weights)
+        # 5 per cell * 7 cells = 35
+        # Global: Speed, Battery, TimeSinceHO, CountHO, Alpha, Beta, Gamma = 7
         self.raw_obs_dim = 5 * num_cells + 7 
         self.frame_stack = frame_stack
         self.obs_dim = self.raw_obs_dim * frame_stack
@@ -39,17 +43,130 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         self.loss_history = []
         self.update_counter = 0
         self.episode_counter = 0
+        
+        # Puppeteer Weights (Internal State)
+        self.context_weights = {"alpha": 0.33, "beta": 0.33, "gamma": 0.34}
 
     def reset_stack(self):
         """Clear observation history (Call at start of episode)."""
         self.obs_queue.clear()
         
-    def get_observation(self, context):
+    def get_observation(self, context: Dict[str, Any]) -> np.ndarray:
         """
-        Process context into a stacked observation vector.
+        Extract scale-invariant features from simulation context.
+        
+        Feature Vector (Size = 5 * num_cells + 6):
+        
+        Per-Cell Features (for each cell i):
+        1. RSRP (norm): (dbm + 100) / 50
+        2. SINR (norm): (db + 10) / 30
+        3. Rel Dist: distance_to_ue / current_isd (clipped to 3.0)
+        4. Rel Bearing: angle_to_ue / pi [-1, 1]
+        5. Is Serving: 1.0 if serving, else 0.0
+        
+        Global Features:
+        1. UE Speed (norm): mps / 30
+        2. UE Battery (norm): joules / 1000
+        3. Time since HO (norm): sec / 5
+        4. Recent HO Count (norm): count / 5
+        5. Alpha (Latency weight)
+        6. Beta (Energy weight)
         """
-        # Fetch single frame
-        single_obs = HOAgent.get_observation(self, context)
+        # 1. Context Extraction
+        rsrp_dbm = context["rsrp_dbm"]
+        sinr_db = context.get("sinr_db")
+        if sinr_db is None:
+             # Backward compat if sinr not in context
+             sinr_db = [-20.0] * self.num_cells
+
+        ue_pos = context.get("ue_position", (0, 0))
+        bs_positions = context.get("bs_positions", [])
+        current_isd = context.get("current_isd", 500.0)  # Default if missing
+        serving_id = context["serving_cell_id"]
+        
+        
+        # For robustness, if missing, assume 3-cell line or generic
+        if not bs_positions and self.num_cells == 3:
+            # Legacy fallback
+            bs_positions = [(0, 0), (500, 0), (1000, 0)] 
+            
+        features = []
+        
+        # 2. Per-Cell Features
+        for i in range(self.num_cells):
+            # Safe access with padding if mismatch
+            r_val = rsrp_dbm[i] if i < len(rsrp_dbm) else -140.0
+            s_val = sinr_db[i] if i < len(sinr_db) else -20.0
+            
+            # RSRP Norm
+            rsrp_norm = (r_val + 100.0) / 50.0
+            
+            # SINR Norm
+            sinr_norm = (s_val + 10.0) / 30.0
+            
+            
+            if i < len(bs_positions):
+                bx, by = bs_positions[i]
+                dx = bx - ue_pos[0]
+                dy = by - ue_pos[1]
+                dist = math.hypot(dx, dy)
+                angle = math.atan2(dy, dx)
+                
+                # Normalize distance by ISD (Scale Invariance!)
+                # Clip to 3.0 (e.g. 3 ISDs away is "far")
+                dist_norm = min(dist / max(current_isd, 1.0), 3.0) 
+                
+                # Normalize bearing to [-1, 1]
+                bearing_norm = angle / math.pi
+            else:
+                dist_norm = 3.0
+                bearing_norm = 0.0
+            
+            # Is Serving
+            is_serving = 1.0 if i == serving_id else 0.0
+            
+            features.extend([rsrp_norm, sinr_norm, dist_norm, bearing_norm, is_serving])
+            
+        # 3. Global Features
+        ue_speed = context.get("ue_speed_mps", 0.0)
+        speed_norm = min(ue_speed / 30.0, 1.0)
+        
+        battery = context.get("ue_battery_joules", 1000.0)
+        batt_norm = battery / 1000.0
+        
+        # HO History
+        current_time = context.get("time_s", 0.0)
+        ho_history = context.get("handover_history", [])
+        
+        if ho_history:
+            t_since = min(current_time - ho_history[-1], 5.0)
+        else:
+            t_since = 5.0
+        time_ho_norm = t_since / 5.0
+        
+        recent_count = sum(1 for t in ho_history if current_time - t <= 2.0)
+        count_ho_norm = min(recent_count / 5.0, 1.0)
+        
+        # Context Weights (Intent Weights)
+        intent = context.get("intent_weights")
+        if intent:
+            alpha = intent.get('latency', 0.33)
+            beta = intent.get('energy', 0.33)
+            gamma = intent.get('throughput', 0.34)
+            # print(f"DEBUG: Agent sees intent: {alpha:.2f}, {beta:.2f}, {gamma:.2f}")
+        elif getattr(self, "context_weights", None):
+            alpha = self.context_weights.get("alpha", 0.33)
+            beta = self.context_weights.get("beta", 0.33)
+            gamma = self.context_weights.get("gamma", 0.34)
+        else:
+            # Default to Balanced if no orders given
+            alpha = 0.33
+            beta = 0.33
+            gamma = 0.34
+            
+        features.extend([speed_norm, batt_norm, time_ho_norm, count_ho_norm, alpha, beta, gamma])
+        
+        single_obs = np.array(features, dtype=np.float32)
         
         # 2. Stack Handling
         if self.frame_stack > 1:
@@ -65,7 +182,7 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         else:
             return single_obs
        
-    def select_action(self, observation: np.ndarray, context: dict = None):
+    def select_action(self, observation: np.ndarray, context: dict = None, training=True):
         """
         PPO Action Selection: Sample from policy.
         Returns: action (int)
@@ -74,14 +191,15 @@ class HOAgentPPO(BasePPOAgent, HOAgent):
         In training loop, we must call select_action_with_info() instead.
         This method is kept for compatibility with evaluating code.
         """
-        action, _, _ = self.select_action_with_info(observation, context)
+        action, _, _ = self.select_action_with_info(observation, context, training=training)
         return action
 
-    def select_action_with_info(self, observation: np.ndarray, context: dict = None):
+    def select_action_with_info(self, observation: np.ndarray, context: dict = None, training=True):
         """
         Returns action, log_prob, value for training buffer.
         """
-        action, log_prob, value = BasePPOAgent.select_action(self, observation)
+        # Always run network first
+        action, log_prob, value = BasePPOAgent.select_action(self, observation, training=training)
         
         # --- CONTROL OVERRIDE ---
         # If the agent is in a critical connection state, force a handover to the best cell.

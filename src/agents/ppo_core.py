@@ -112,15 +112,16 @@ class BasePPOAgent:
         # Episode Counter
         self.episode_counter = 0
         
-    def select_action(self, obs: np.ndarray) -> Tuple[int, float, float]:
+    def select_action(self, obs: np.ndarray, training: bool = True) -> Tuple[int, float, float]:
         """
         Select action for rollout.
         Returns: action, log_prob, value
         """
-        # 1. Update RMS (Only during training rollouts?) 
-        # Usually we update RMS during rollout.
+        # 1. Update RMS (Only during training rollouts) 
         if self.normalize_obs:
-            self.obs_rms.update(obs)
+            # Critical Fix: Only update stats during training to prevent leakage
+            if training:
+                self.obs_rms.update(obs)
             norm_obs = self.obs_rms.normalize(obs)
         else:
             norm_obs = obs
@@ -166,6 +167,10 @@ class BasePPOAgent:
         params = self._compute_gae(last_val)
         returns = params['returns']
         advantages = params['advantages']
+        
+        # Advantage Normalization (Critical for stability)
+        if len(advantages) > 1:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         
         # Flatten and Update
         b_obs = obs_t
